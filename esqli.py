@@ -130,7 +130,7 @@ class BSQLI:
             print(f"{Color.YELLOW}Scan interrupted by user.{Color.RESET}")
 
 def main():
-    parser = argparse.ArgumentParser(description="BSQLI Tool - SQL Injection Scanner")
+    parser = argparse.ArgumentParser(description="ESQLI Tool - SQL Injection Scanner")
     parser.add_argument('-u', '--urls', type=str, required=True, help="Path to URL list file or a single URL")
     parser.add_argument('-p', '--payloads', type=str, required=True, help="Path to the payload file")
     parser.add_argument('-t', '--threads', type=int, default=0, help="Number of concurrent threads (0-10)")
