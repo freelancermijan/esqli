@@ -24,7 +24,7 @@ class BSQLI:
     ]
 
     SQL_ERROR_PATTERNS = {
-        'MySQL': ["you have an error in your sql syntax", "warning: mysql", "mysql_fetch"],
+        'MySQL': ["you have an error in your sql syntax", "warning: mysql", "mysql_fetch", "sql syntax near", "unexpected end of SQL", "Warning: mysql_", "pg_connect()", "OLE DB Provider for SQL Server"],
         'PostgreSQL': ["syntax error at or near", "pg_query", "psql:"],
         'MSSQL': ["unclosed quotation mark after the character string", "sql server", "microsoft ole db"],
         'Oracle': ["ora-", "oracle", "pl/sql:"],
