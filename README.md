@@ -30,3 +30,9 @@ options:
                         File to save only positive results
   -V, --version         Display version information and exit
 ```
+
+### Usage
+
+```
+esqli -u vulnweb.com.parameters.txt -p payloads/error.txt -f -o output.error.txt
+```
