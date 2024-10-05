@@ -1,18 +1,10 @@
 ### Installation
 
 ```
-cd /opt/
-
-sudo git clone https://github.com/freelancermijan/esqli.git
-
-cd esqli/
-
-sudo chmod +x ./*.py
-
+cd /opt/ && sudo git clone https://github.com/freelancermijan/esqli.git && cd esqli/
+sudo chmod +x ./esqli.py
 cd
-
 sudo ln -sf /opt/esqli/esqli.py /usr/local/bin/esqli
-
 esqli -h
 ```
 
