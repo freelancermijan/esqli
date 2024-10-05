@@ -1,168 +1,166 @@
 #!/usr/bin/env python3
-import os
-import requests
+import re
+import subprocess
 import time
-import random
+from termcolor import colored
 import argparse
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
+import random
+import sys
+from datetime import datetime
 
-class Color:
-    BLUE = '\033[94m'
-    GREEN = '\033[1;92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    PURPLE = '\033[95m'
-    CYAN = '\033[96m'
-    RESET = '\033[0m'
+VERSION = "v1.2"
 
-class BSQLI:
-    USER_AGENTS = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Version/14.1.2 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/91.0.864.70",
-        "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
-    ]
+def print_banner():
+    banner = """"""
+    print(banner)
+    animated_text("Project ESQLi Error-Based Tool", 'blue')
 
-    SQL_ERROR_PATTERNS = {
-        'MySQL': ["you have an error in your sql syntax", "warning: mysql", "mysql_fetch", "sql syntax near", "unexpected end of SQL", "Warning: mysql_", "pg_connect()", "OLE DB Provider for SQL Server"],
-        'PostgreSQL': ["syntax error at or near", "pg_query", "psql:"],
-        'MSSQL': ["unclosed quotation mark after the character string", "sql server", "microsoft ole db"],
-        'Oracle': ["ora-", "oracle", "pl/sql:"],
-    }
+def animated_text(text, color='white', speed=0):
+    for char in text:
+        sys.stdout.write(colored(char, color))
+        sys.stdout.flush()
+        time.sleep(speed)
+    print()
 
-    def __init__(self, verbose=False):
-        self.vulnerabilities_found = 0
-        self.total_tests = 0
-        self.verbose = verbose
-        self.vulnerable_urls = []
-        self.db_type = None
+def random_delay():
+    if args.silent:
+        time.sleep(60/12)
+    else:
+        base_delay = 1
+        jitter = random.uniform(0.5, 1.5)
+        time.sleep(base_delay * jitter)
 
-    def get_random_user_agent(self):
-        return random.choice(self.USER_AGENTS)
+# Create the argument parser and add arguments
+parser = argparse.ArgumentParser(description="SQLi Error-Based Tool")
+parser.add_argument("-u", "--urls", required=True, help="Provide a URLs list for testing", type=str)
+parser.add_argument("-p", "--payloads", required=True, help="Provide a list of SQLi payloads for testing", type=str)
+parser.add_argument("-s", "--silent", action="store_true", help="Rate limit to 12 requests per second")
+parser.add_argument("-f", "--fast", action="store_true", help="Use multi-threading for faster scanning")
+parser.add_argument("-o", "--output", help="File to save only positive results")
+parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {VERSION}", help="Display version information and exit")
 
-    def detect_sql_errors(self, response_text):
-        if not self.db_type:  # Check all DB types if we haven't fingerprinted yet
-            for db, errors in self.SQL_ERROR_PATTERNS.items():
-                if any(error.lower() in response_text.lower() for error in errors):
-                    self.db_type = db
-                    return True
-        else:  # Only check against the detected database type
-            errors = self.SQL_ERROR_PATTERNS.get(self.db_type, [])
-            return any(error.lower() in response_text.lower() for error in errors)
-        return False
+args = parser.parse_args()
 
-    def identify_backend(self, response_headers):
-        if "x-powered-by" in response_headers:
-            x_powered_by = response_headers.get("x-powered-by", "").lower()
-            if "php" in x_powered_by:
-                self.db_type = 'MySQL'
-            elif "asp" in x_powered_by:
-                self.db_type = 'MSSQL'
-            elif "java" in x_powered_by:
-                self.db_type = 'Oracle'
+# Check if required arguments are missing
+if not args.urls or not args.payloads:
+    parser.error("the following arguments are required: -u/--urls, -p/--payloads")
 
-    def perform_request(self, url, payload, cookie):
-        url_with_payload = f"{url}{payload}"
-        start_time = time.time()
-        headers = {'User-Agent': self.get_random_user_agent()}
-        try:
-            response = requests.get(url_with_payload, headers=headers, cookies={'cookie': cookie} if cookie else None)
-            response.raise_for_status()
-            response_time = time.time() - start_time
+print_banner()
 
-            # Identify the backend technology
-            if not self.db_type:
-                self.identify_backend(response.headers)
+with open(args.urls, 'r') as f:
+    urls = f.read().splitlines()
+
+with open(args.payloads, 'r') as f:
+    payloads = f.read().splitlines()
+
+# Randomize the order of URLs
+random.shuffle(urls)
+
+# User agents list
+user_agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Version/14.1.2 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/91.0.864.70",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/89.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:91.0) Gecko/20100101 Firefox/91.0",
+    "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Mobile Safari/537.36",
+]
+
+sql_errors = [
+    "Syntax error", "Fatal error", "MariaDB", "corresponds", "Database Error", "syntax",
+    "/usr/www", "public_html", "database error", "on line", "RuntimeException", "mysql_", 
+    "MySQL", "PSQLException", "at line", "You have an error in your SQL syntax", 
+    "mysql_query()", "pg_connect()", "SQLiteException", "ORA-", "invalid input syntax for type", 
+    "unterminated quoted string", "PostgreSQL query failed:", "unrecognized token:", 
+    "binding parameter", "undeclared variable:", "SQLSTATE", "constraint failed", 
+    "ORA-00936: missing expression", "ORA-06512:", "PLS-", "SP2-", "dynamic SQL error", 
+    "SQL command not properly ended", "T-SQL Error", "Msg ", "Level ", 
+    "Unclosed quotation mark after the character string", "quoted string not properly terminated", 
+    "Incorrect syntax near", "An expression of non-boolean type specified in a context where a condition is expected", 
+    "Conversion failed when converting", "Unclosed quotation mark before the character string", 
+    "SQL Server", "OLE DB", "Unknown column", "Access violation", "No such host is known", 
+    "server error", "syntax error at or near", "column does not exist", "could not prepare statement", 
+    "no such table:", "near \"Syntax error\": syntax error", "unknown error", 
+    "unexpected end of statement", "ambiguous column name", "database is locked", 
+    "permission denied", "attempt to write a readonly database", "out of memory", 
+    "disk I/O error", "cannot attach the file", "operation is not allowed in this state", 
+    "data type mismatch", "cannot open database", "table or view does not exist", 
+    "index already exists", "index not found", "division by zero", "value too large for column", 
+    "deadlock detected", "invalid operator", "sequence does not exist", 
+    "duplicate key value violates unique constraint", "string data, right truncated", 
+    "insufficient privileges", "missing keyword", "too many connections", 
+    "configuration limit exceeded", "network error while attempting to read from the file", 
+    "cannot rollback - no transaction is active", "feature not supported", 
+    "system error", "object not in prerequisite state", "login failed for user", 
+    "remote server is not known"
+]
+
+total_requests = len(urls) * len(payloads) * max(url.count('&') + 1 for url in urls)
+progress = 0
+start_time = time.time()
+
+# Determine output file name
+output_file = args.output if args.output else f"positive_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+def scan_url(url):
+    base_url, query_string = url.split('?', 1) if '?' in url else (url, '')
+    pairs = query_string.split('&')
+
+    for payload in payloads:
+        payload = payload.replace("'", "%27")
+        for i in range(len(pairs)):
+            modified_pairs = pairs.copy()
+            if '=' in modified_pairs[i]:
+                key, value = modified_pairs[i].split('=', 1)
+                modified_pairs[i] = f"{key}={payload}"
+            url_modified = f"{base_url}?{'&'.join(modified_pairs)}"
+            user_agent = random.choice(user_agents)  # Randomly choose a user agent
+            command = ['curl', '-s', '-i', '--url', url_modified, '-A', user_agent]  # Add user agent to command
+            output_bytes = None
             
-            # Detect SQL errors in response text
-            if self.detect_sql_errors(response.text):
-                return True, url_with_payload, response_time, response.status_code, None  # Vulnerability detected
-            return False, url_with_payload, response_time, response.status_code, None
-        except requests.exceptions.RequestException as e:
-            response_time = time.time() - start_time
-            return False, url_with_payload, response_time, None, str(e)
+            try:
+                output_bytes = subprocess.check_output(command, stderr=subprocess.DEVNULL)
+            except subprocess.CalledProcessError:
+                pass
+            
+            if output_bytes is not None:
+                output_str = output_bytes.decode('utf-8', errors='ignore')
+                sql_matches = [error for error in sql_errors if error in output_str]
+                if sql_matches:
+                    message = f"\n{colored('SQL ERROR FOUND', 'white')} ON {colored(url_modified, 'red', attrs=['bold'])} with payload {colored(payload, 'white')}"
+                    print(message)
+                    for match in sql_matches:
+                        print(colored(" Match Words: " + match, 'cyan'))
+                    # Immediately save the positive result
+                    with open(output_file, 'a') as file:
+                        file.write(url_modified + '\n')
+                else:
+                    print(colored(f"URL: {url_modified} | Payload: {payload} | Status: safe", 'green'))
 
-    def log_result(self, success, url_with_payload, response_time, status_code):
-        if success:
-            self.vulnerabilities_found += 1
-            self.vulnerable_urls.append(url_with_payload)
-            if self.verbose:
-                print(f"{Color.GREEN}✓ SQLi Found! URL: {url_with_payload} - ErrorSQLi - Status Code: {status_code}{Color.RESET}")
-            else:
-                print(f"{Color.GREEN}✓ Vulnerable URL: {url_with_payload}{Color.RESET}")
-        else:
-            if self.verbose:
-                print(f"{Color.RED}✗ Not Vulnerable: {url_with_payload} - ErrorSQLi - Status Code: {status_code}{Color.RESET}")
+            random_delay()
+            global progress
+            progress += 1
 
-    def read_file(self, path):
-        try:
-            with open(path) as file:
-                return [line.strip() for line in file if line.strip()]
-        except Exception as e:
-            print(f"{Color.RED}Error reading file {path}: {e}{Color.RESET}")
-            return []
+            # Print progress
+            elapsed_seconds = time.time() - start_time
+            remaining_seconds = (total_requests - progress) * (elapsed_seconds / progress) if progress > 0 else 0
+            remaining_hours = int(remaining_seconds // 3600)
+            remaining_minutes = int((remaining_seconds % 3600) // 60)
+            percent_complete = round(progress / total_requests * 100, 2)
+            print(f"{colored('Progress:', 'blue')} {progress}/{total_requests} ({percent_complete}%) - {remaining_hours}h:{remaining_minutes:02d}m")
 
-    def save_vulnerable_urls(self, filename):
-        try:
-            with open(filename, 'w') as file:
-                for url in self.vulnerable_urls:
-                    file.write(f"{url}\n")
-            print(f"{Color.GREEN}Vulnerable URLs saved to {filename}{Color.RESET}")
-        except Exception as e:
-            print(f"{Color.RED}Error saving vulnerable URLs to file: {e}{Color.RESET}")
+# Use ThreadPoolExecutor if fast flag is set, otherwise use a loop
+if args.fast:
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        executor.map(scan_url, urls)
+else:
+    for url in urls:
+        scan_url(url)
 
-    def run_scan(self, urls, payloads, cookie, threads):
-        try:
-            if threads == 0:
-                for url in urls:
-                    for payload in payloads:
-                        self.total_tests += 1
-                        success, url_with_payload, response_time, status_code, error_message = self.perform_request(url, payload, cookie)
-                        self.log_result(success, url_with_payload, response_time, status_code)
-            else:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-                    futures = [executor.submit(self.perform_request, url, payload, cookie) for url in urls for payload in payloads]
-                    for future in concurrent.futures.as_completed(futures):
-                        self.total_tests += 1
-                        success, url_with_payload, response_time, status_code, error_message = future.result()
-                        self.log_result(success, url_with_payload, response_time, status_code)
-        except KeyboardInterrupt:
-            print(f"{Color.YELLOW}Scan interrupted by user.{Color.RESET}")
-
-def main():
-    parser = argparse.ArgumentParser(description="ESQLI Tool - SQL Injection Scanner")
-    parser.add_argument('-u', '--urls', type=str, required=True, help="Path to URL list file or a single URL")
-    parser.add_argument('-p', '--payloads', type=str, required=True, help="Path to the payload file")
-    parser.add_argument('-t', '--threads', type=int, default=0, help="Number of concurrent threads (0-10)")
-    parser.add_argument('-o', '--save', type=str, default="", help="Filename to save vulnerable URLs")
-    parser.add_argument('-v', '--verbose', action='store_true', help="Enable verbose mode")
-    parser.add_argument('-V', '--version', action='version', version='BSQLI Scanner 1.0', help="Show version")
-
-    args = parser.parse_args()
-
-    scanner = BSQLI(verbose=args.verbose)
-
-    # Read URLs
-    urls = [args.urls] if not os.path.isfile(args.urls) else scanner.read_file(args.urls)
-    if not urls:
-        print(f"{Color.RED}No valid URLs provided.{Color.RESET}")
-        return
-
-    # Read payloads
-    payloads = scanner.read_file(args.payloads)
-    if not payloads:
-        print(f"{Color.RED}No valid payloads found in file: {args.payloads}{Color.RESET}")
-        return
-
-    print(f"{Color.PURPLE}Starting Error Based Scan...{Color.RESET}")
-    scanner.run_scan(urls, payloads, None, args.threads)  # Cookie set to None, can be added
-
-    print(f"\n{Color.BLUE}Scan Complete.{Color.RESET}")
-    print(f"{Color.YELLOW}Total Tests: {scanner.total_tests}{Color.RESET}")
-    print(f"{Color.GREEN}Error SQLi Found: {scanner.vulnerabilities_found}{Color.RESET}")
-
-    if args.save:
-        scanner.save_vulnerable_urls(args.save)
-
-if __name__ == "__main__":
-    main()
+end_time = time.time()
+total_time = end_time - start_time
+print("Scanning completed.")
+print(f"Total time taken: {total_time:.2f} seconds")
