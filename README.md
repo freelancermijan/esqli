@@ -23,7 +23,7 @@ esqli -h
 ### Options
 
 ```
-usage: esqli.py [-h] -u URLS -p PAYLOADS [-s] [-f] [-o OUTPUT] [-V]
+usage: esqli [-h] -u URLS -p PAYLOADS [-s] [-f] [-o OUTPUT] [-V]
 
 SQLi Error-Based Tool
 
