@@ -12,7 +12,7 @@ from datetime import datetime
 VERSION = "v1.2"
 
 def print_banner():
-    banner = """"""
+    banner = """"""  # You can add your banner text here
     print(banner)
     animated_text("Project ESQLi Error-Based Tool", 'blue')
 
@@ -25,7 +25,7 @@ def animated_text(text, color='white', speed=0):
 
 def random_delay():
     if args.silent:
-        time.sleep(60/12)
+        time.sleep(60 / 12)
     else:
         base_delay = 1
         jitter = random.uniform(0.5, 1.5)
@@ -36,7 +36,7 @@ parser = argparse.ArgumentParser(description="SQLi Error-Based Tool")
 parser.add_argument("-u", "--urls", required=True, help="Provide a URLs list for testing", type=str)
 parser.add_argument("-p", "--payloads", required=True, help="Provide a list of SQLi payloads for testing", type=str)
 parser.add_argument("-s", "--silent", action="store_true", help="Rate limit to 12 requests per second")
-parser.add_argument("-f", "--fast", action="store_true", help="Use multi-threading for faster scanning")
+parser.add_argument("-t", "--threads", type=int, choices=range(1, 21), required=False, help="Number of threads (1-20)")
 parser.add_argument("-o", "--output", help="File to save only positive results")
 parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {VERSION}", help="Display version information and exit")
 
@@ -53,9 +53,6 @@ with open(args.urls, 'r') as f:
 
 with open(args.payloads, 'r') as f:
     payloads = f.read().splitlines()
-
-# Randomize the order of URLs
-random.shuffle(urls)
 
 # User agents list
 user_agents = [
@@ -105,62 +102,81 @@ start_time = time.time()
 # Determine output file name
 output_file = args.output if args.output else f"positive_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
-def scan_url(url):
+def fetch_url(command, retries=3):
+    for _ in range(retries):
+        try:
+            return subprocess.check_output(command, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            time.sleep(1)  # Small delay before retry
+    return None
+
+def scan_with_payload(url):
     base_url, query_string = url.split('?', 1) if '?' in url else (url, '')
     pairs = query_string.split('&')
 
-    for payload in payloads:
-        payload = payload.replace("'", "%27")
-        for i in range(len(pairs)):
+    # Loop through each parameter
+    for i in range(len(pairs)):
+        # Keep track if SQL errors were found for this parameter
+        found_sql_error = False
+        
+        # Loop through each payload for the current parameter
+        for payload in payloads:
             modified_pairs = pairs.copy()
             if '=' in modified_pairs[i]:
                 key, value = modified_pairs[i].split('=', 1)
-                modified_pairs[i] = f"{key}={payload}"
+                modified_pairs[i] = f"{key}={payload}"  # Replace value with the current payload
             url_modified = f"{base_url}?{'&'.join(modified_pairs)}"
+            
+            print(colored(f"Testing URL: {url_modified}", 'cyan'))  # Debug output
+            
             user_agent = random.choice(user_agents)  # Randomly choose a user agent
-            command = ['curl', '-s', '-i', '--url', url_modified, '-A', user_agent]  # Add user agent to command
-            output_bytes = None
+            command = ['curl', '-s', '-i', '--url', url_modified, '-A', user_agent, '--max-time', '10']
             
-            try:
-                output_bytes = subprocess.check_output(command, stderr=subprocess.DEVNULL)
-            except subprocess.CalledProcessError:
-                pass
-            
+            output_bytes = fetch_url(command)
             if output_bytes is not None:
                 output_str = output_bytes.decode('utf-8', errors='ignore')
                 sql_matches = [error for error in sql_errors if error in output_str]
                 if sql_matches:
-                    message = f"\n{colored('SQL ERROR FOUND', 'white')} ON {colored(url_modified, 'red', attrs=['bold'])} with payload {colored(payload, 'white')}"
+                    message = f"\n{colored('SQL ERROR FOUND', 'white')} ON {colored(url_modified, 'red', attrs=['bold'])} with payload {colored(payload, 'yellow')}"
                     print(message)
-                    for match in sql_matches:
-                        print(colored(" Match Words: " + match, 'cyan'))
                     # Immediately save the positive result
                     with open(output_file, 'a') as file:
                         file.write(url_modified + '\n')
-                else:
-                    print(colored(f"URL: {url_modified} | Payload: {payload} | Status: safe", 'green'))
+                    found_sql_error = True  # Mark that we found an SQLi error
+                    break  # Stop checking other payloads for this parameter
 
-            random_delay()
-            global progress
-            progress += 1
+        # If an SQLi error was found, break out of the payload loop and go to the next parameter
+        if found_sql_error:
+            continue  # Skip to the next parameter
 
-            # Print progress
-            elapsed_seconds = time.time() - start_time
-            remaining_seconds = (total_requests - progress) * (elapsed_seconds / progress) if progress > 0 else 0
-            remaining_hours = int(remaining_seconds // 3600)
-            remaining_minutes = int((remaining_seconds % 3600) // 60)
-            percent_complete = round(progress / total_requests * 100, 2)
-            print(f"{colored('Progress:', 'blue')} {progress}/{total_requests} ({percent_complete}%) - {remaining_hours}h:{remaining_minutes:02d}m")
+def scan_url(url):
+    global progress  # Declare 'progress' as global here
+    # For each URL, run payload scans in parallel
+    with ThreadPoolExecutor(max_workers=args.threads) as executor:
+        executor.submit(scan_with_payload, url)  # Directly pass the url to scan_with_payload
 
-# Use ThreadPoolExecutor if fast flag is set, otherwise use a loop
-if args.fast:
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        executor.map(scan_url, urls)
-else:
-    for url in urls:
-        scan_url(url)
+# Main execution with graceful shutdown
+try:
+    with ThreadPoolExecutor(max_workers=args.threads) as executor:
+        # Iterate through URLs and scan
+        for url in urls:
+            executor.submit(scan_url, url)
+
+            # Increment progress
+            progress += len(payloads)  # Update the progress for the total payloads for this URL
+
+            # Print progress every 10 requests
+            if progress % 10 == 0:
+                elapsed_seconds = time.time() - start_time
+                remaining_seconds = (total_requests - progress) * (elapsed_seconds / progress) if progress > 0 else 0
+                remaining_hours = int(remaining_seconds // 3600)
+                remaining_minutes = int((remaining_seconds % 3600) // 60)
+                percent_complete = round(progress / total_requests * 100, 2)
+                print(f"{colored('Progress:', 'blue')} {progress}/{total_requests} ({percent_complete}%) - {remaining_hours}h:{remaining_minutes:02d}m")
+
+except KeyboardInterrupt:
+    print(colored("\nScan interrupted by user. Saving results...", 'yellow'))
 
 end_time = time.time()
 total_time = end_time - start_time
-print("Scanning completed.")
-print(f"Total time taken: {total_time:.2f} seconds")
+print(colored(f"\nTotal Time: {total_time:.2f} seconds", 'yellow'))
