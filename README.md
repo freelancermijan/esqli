@@ -15,7 +15,7 @@ esqli -h
 ### Options
 
 ```
-usage: esqli [-h] -u URLS -p PAYLOADS [-s] [-f] [-o OUTPUT] [-V]
+usage: eesqli [-h] -u URLS -p PAYLOADS [-s] [-t {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}] [-o OUTPUT] [-V]
 
 SQLi Error-Based Tool
 
@@ -25,7 +25,8 @@ options:
   -p PAYLOADS, --payloads PAYLOADS
                         Provide a list of SQLi payloads for testing
   -s, --silent          Rate limit to 12 requests per second
-  -f, --fast            Use multi-threading for faster scanning
+  -t {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}, --threads {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}
+                        Number of threads (1-20)
   -o OUTPUT, --output OUTPUT
                         File to save only positive results
   -V, --version         Display version information and exit
