@@ -16,13 +16,15 @@ esqli -h
 
 ```
 esqli -h                                                                                                                         ─╯
-usage: esqli [-h] -u URLS -p PAYLOADS [-s] [-t {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}] [-o OUTPUT] [--parallel] [-V]
+usage: esqli [-h] (-l LIST | -u URL) -p PAYLOADS [-s] [-t {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}] [-o OUTPUT]
+                 [--parallel] [-V]
 
 SQLi Error-Based Tool
 
 options:
   -h, --help            show this help message and exit
-  -u URLS, --urls URLS  Provide a URLs list for testing
+  -l LIST, --list LIST  Provide a URLs list for testing
+  -u URL, --url URL     Provide a single URL for testing
   -p PAYLOADS, --payloads PAYLOADS
                         Provide a list of SQLi payloads for testing
   -s, --silent          Rate limit to 12 requests per second
