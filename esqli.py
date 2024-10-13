@@ -25,7 +25,9 @@ def animated_text(text, color='white', speed=0):
 
 # Create the argument parser and add arguments
 parser = argparse.ArgumentParser(description="SQLi Error-Based Tool")
-parser.add_argument("-u", "--urls", required=True, help="Provide a URLs list for testing", type=str)
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument("-l", "--list", help="Provide a URLs list for testing", type=str)
+group.add_argument("-u", "--url", help="Provide a single URL for testing", type=str)
 parser.add_argument("-p", "--payloads", required=True, help="Provide a list of SQLi payloads for testing", type=str)
 parser.add_argument("-s", "--silent", action="store_true", help="Rate limit to 12 requests per second")
 parser.add_argument("-t", "--threads", type=int, choices=range(1, 21), required=False, help="Number of threads (1-20)")
@@ -37,8 +39,12 @@ args = parser.parse_args()
 
 print_banner()
 
-with open(args.urls, 'r') as f:
-    urls = f.read().splitlines()
+# Handle list of URLs or single URL
+if args.list:
+    with open(args.list, 'r') as f:
+        urls = f.read().splitlines()
+elif args.url:
+    urls = [args.url]  # Convert the single URL into a list for uniform processing
 
 with open(args.payloads, 'r') as f:
     payloads = f.read().splitlines()
@@ -152,24 +158,29 @@ def scan_with_payload(url):
                 if result:
                     save_results(result)
                     found_sql_error = True
-                    break  # Stop testing and jump to next URL
-        
+                    break  # Stop testing other payloads for this parameter and move to next URL
+
         if found_sql_error:
-            break  # Move to next URL after finding SQLi error
+            break  # Skip the rest of the parameters and move on to the next URL
 
-def scan_url(url):
-    global progress
-    scan_with_payload(url)
-    progress += len(payloads)
-    report_progress(progress, total_requests, start_time)
-
-# Main execution with graceful shutdown
+# Main scanning process
 try:
-    with ThreadPoolExecutor(max_workers=args.threads) as executor:
-        executor.map(scan_url, urls)
-except KeyboardInterrupt:
-    print(colored("\nScan interrupted by user. Saving results...", 'yellow'))
+    if args.threads:
+        # Use multi-threading
+        with ThreadPoolExecutor(max_workers=args.threads) as executor:
+            futures = [executor.submit(scan_with_payload, url) for url in urls]
+            for future in as_completed(futures):
+                progress += 1
+                report_progress(progress, total_requests, start_time)
+    else:
+        # No multi-threading
+        for url in urls:
+            scan_with_payload(url)
+            progress += 1
+            report_progress(progress, total_requests, start_time)
 
-end_time = time.time()
-total_time = end_time - start_time
-print(colored(f"\nTotal Time: {total_time:.2f} seconds", 'yellow'))
+except KeyboardInterrupt:
+    print(colored("\n[!] Scan interrupted by user. Saving progress...", "red"))
+
+finally:
+    print(f"Results saved in: {output_file}")
