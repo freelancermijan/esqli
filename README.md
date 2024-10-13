@@ -39,5 +39,5 @@ options:
 ### Usage
 
 ```
-esqli -u vulnweb.com.parameters.txt -p payloads/error.txt -t 10 --parallel -o saved.txt
+esqli -l vulnweb.com.parameters.txt -p payloads/error.txt -t 10 --parallel -o saved.txt
 ```
